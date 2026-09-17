@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "providers": [
     {
       "id": "peertube",
@@ -35,6 +35,32 @@
       "rights": {
         "rehosting": false,
         "license": "video_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "response": {
+        "resultsPath": "data",
+        "mapping": {
+          "id": ["id", "uuid"],
+          "title": ["name", "title"],
+          "originalTitle": ["originalTitle"],
+          "url": ["url"],
+          "thumbnail": ["thumbnailPath", "thumbnailUrl"],
+          "duration": ["duration"],
+          "language": ["language"],
+          "license": ["licence.label"]
+        }
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
@@ -48,29 +74,61 @@
       "apiBaseUrl": "https://INSTANCE/api",
       "search": {
         "enabled": true,
-        "method": "GET"
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/video/{id}"
       },
       "playback": {
         "enabled": true,
-        "types": ["mp4", "hls", "webm"]
+        "types": ["mp4", "hls", "webm"],
+        "directUrl": true
       },
+      "subtitles": true,
       "authentication": {
         "required": false,
-        "type": "instance_specific"
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "video_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "response": {
+        "resultsPath": "results",
+        "mapping": {
+          "id": ["id", "uuid", "pk"],
+          "title": ["title", "name"],
+          "url": ["url", "video_url", "media_url"],
+          "thumbnail": ["thumbnail", "thumbnail_url"],
+          "duration": ["duration"],
+          "year": ["year"]
+        }
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "owncast",
       "name": "Owncast",
-      "category": "live_streaming",
+      "category": "live_platform",
       "enabled": true,
       "instance_required": true,
       "baseUrl": "https://INSTANCE",
@@ -79,48 +137,87 @@
         "enabled": false
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/status"
       },
       "playback": {
         "enabled": true,
         "types": ["hls"],
+        "directUrl": true,
         "live": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
-        "type": "instance_specific"
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "instance_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": false,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": true
+      },
+      "validation": {
+        "requireTitle": false,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "mediagoblin",
       "name": "MediaGoblin",
-      "category": "open_media_platform",
+      "category": "media_platform",
       "enabled": true,
       "instance_required": true,
       "baseUrl": "https://INSTANCE",
-      "apiBaseUrl": "https://INSTANCE/api",
+      "apiBaseUrl": "https://INSTANCE",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/media/{id}"
       },
       "playback": {
         "enabled": true,
-        "types": ["web_video", "mp4", "webm"]
+        "types": ["mp4", "webm", "ogg"],
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
-        "type": "instance_specific"
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "media_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
@@ -136,49 +233,71 @@
         "enabled": false
       },
       "resolve": {
-        "enabled": true
+        "enabled": false
       },
       "playback": {
         "enabled": true,
-        "types": ["hls", "dash", "webrtc"],
+        "types": ["hls", "dash"],
+        "directUrl": true,
         "live": true
       },
+      "subtitles": false,
       "authentication": {
-        "required": true,
-        "type": "server_specific"
+        "required": false,
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "server_specific"
+        "license": "instance_specific"
+      },
+      "capabilities": {
+        "metadata": false,
+        "search": false,
+        "resolve": false,
+        "playback": true,
+        "subtitles": false,
+        "live": true
       }
     },
 
     {
       "id": "restreamer",
       "name": "Restreamer",
-      "category": "streaming_platform",
+      "category": "streaming_server",
       "enabled": true,
       "instance_required": true,
       "baseUrl": "https://INSTANCE",
-      "apiBaseUrl": "https://INSTANCE",
+      "apiBaseUrl": "https://INSTANCE/api",
       "search": {
         "enabled": false
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/"
       },
       "playback": {
         "enabled": true,
         "types": ["hls", "mp4"],
+        "directUrl": true,
         "live": true
       },
+      "subtitles": false,
       "authentication": {
-        "required": true,
-        "type": "instance_specific"
+        "required": false,
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "instance_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": false,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": true
       }
     },
 
@@ -189,25 +308,35 @@
       "enabled": true,
       "instance_required": true,
       "baseUrl": "https://INSTANCE",
-      "apiBaseUrl": "https://INSTANCE",
+      "apiBaseUrl": "https://INSTANCE/api",
       "search": {
         "enabled": false
       },
       "resolve": {
-        "enabled": true
+        "enabled": false
       },
       "playback": {
         "enabled": true,
-        "types": ["hls", "dash", "webrtc", "rtmp"],
+        "types": ["hls", "dash", "http-flv"],
+        "directUrl": true,
         "live": true
       },
+      "subtitles": false,
       "authentication": {
-        "required": true,
-        "type": "server_specific"
+        "required": false,
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "server_specific"
+        "license": "instance_specific"
+      },
+      "capabilities": {
+        "metadata": false,
+        "search": false,
+        "resolve": false,
+        "playback": true,
+        "subtitles": false,
+        "live": true
       }
     },
 
@@ -234,15 +363,30 @@
       },
       "playback": {
         "enabled": true,
-        "types": ["source_platform_stream"]
+        "types": ["hls", "mp4", "webm"],
+        "directUrl": true
       },
+      "subtitles": true,
       "authentication": {
         "required": false,
-        "type": "instance_specific"
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "source_video_specific"
+        "license": "source_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
@@ -258,26 +402,36 @@
         "enabled": false
       },
       "resolve": {
-        "enabled": true
+        "enabled": false
       },
       "playback": {
         "enabled": true,
-        "types": ["platform_source"]
+        "types": ["mp4", "webm", "hls"],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
-        "type": "instance_specific"
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "source_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": false,
+        "resolve": false,
+        "playback": true,
+        "subtitles": false,
+        "live": false
       }
     },
 
     {
       "id": "internet_archive",
       "name": "Internet Archive",
-      "category": "digital_archive",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://archive.org",
@@ -288,6 +442,9 @@
         "path": "/advancedsearch.php",
         "query": {
           "q": "{query}",
+          "fl[]": "identifier,title,description,year",
+          "rows": "50",
+          "page": "1",
           "output": "json"
         }
       },
@@ -298,26 +455,47 @@
       },
       "playback": {
         "enabled": true,
-        "types": ["mp4", "webm", "ogv", "hls"],
-        "directUrl": "item_dependent"
+        "types": ["mp4", "webm", "ogg", "hls", "mpeg"],
+        "directUrl": true
       },
+      "subtitles": true,
       "authentication": {
         "required": false,
         "type": "none"
       },
-      "subtitles": {
-        "enabled": true
-      },
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "response": {
+        "resultsPath": "response.docs",
+        "mapping": {
+          "id": ["identifier"],
+          "title": ["title"],
+          "originalTitle": ["original_title"],
+          "year": ["year"],
+          "thumbnail": ["identifier"]
+        }
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "wikimedia_commons",
       "name": "Wikimedia Commons",
-      "category": "media_archive",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://commons.wikimedia.org",
@@ -325,17 +503,18 @@
       "search": {
         "enabled": true,
         "method": "GET",
+        "path": "/",
         "query": {
           "action": "query",
-          "generator": "search",
-          "gsrsearch": "{query}",
-          "gsrnamespace": "6",
+          "list": "search",
+          "srsearch": "{query}",
           "format": "json"
         }
       },
       "resolve": {
         "enabled": true,
         "method": "GET",
+        "path": "/",
         "query": {
           "action": "query",
           "prop": "imageinfo",
@@ -345,9 +524,10 @@
       },
       "playback": {
         "enabled": true,
-        "types": ["webm", "ogv", "mp4"],
-        "directUrl": "file_dependent"
+        "types": ["mp4", "webm", "ogg", "ogv"],
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -355,33 +535,49 @@
       "rights": {
         "rehosting": false,
         "license": "file_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "nasa_svs",
       "name": "NASA Scientific Visualization Studio",
-      "category": "public_media",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://svs.gsfc.nasa.gov",
-      "apiBaseUrl": "https://svs.gsfc.nasa.gov/api",
+      "apiBaseUrl": "https://svs.gsfc.nasa.gov",
       "search": {
         "enabled": true,
         "method": "GET",
-        "path": "/search/",
+        "path": "/search",
         "query": {
           "q": "{query}"
         }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4", "webm"],
-        "directUrl": "asset_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -389,13 +585,26 @@
       "rights": {
         "rehosting": false,
         "license": "asset_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "library_of_congress",
       "name": "Library of Congress",
-      "category": "digital_archive",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://www.loc.gov",
@@ -403,7 +612,7 @@
       "search": {
         "enabled": true,
         "method": "GET",
-        "path": "/film-and-videos/",
+        "path": "/search/",
         "query": {
           "q": "{query}",
           "fo": "json"
@@ -412,16 +621,14 @@
       "resolve": {
         "enabled": true,
         "method": "GET",
-        "path": "/item/{id}/",
-        "query": {
-          "fo": "json"
-        }
+        "path": "/{id}"
       },
       "playback": {
         "enabled": true,
-        "types": ["mp4", "webm", "other"],
-        "directUrl": "resource_dependent"
+        "types": ["mp4", "webm"],
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -429,57 +636,99 @@
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "dvids",
       "name": "DVIDS",
-      "category": "public_media",
+      "category": "government_archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://www.dvidshub.net",
-      "apiBaseUrl": "https://api.dvidshub.net",
+      "apiBaseUrl": "https://www.dvidshub.net",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/video/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4"],
-        "directUrl": "asset_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
-        "required": "api_dependent",
-        "type": "api"
+        "required": false,
+        "type": "none"
       },
       "rights": {
         "rehosting": false,
         "license": "asset_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "noaa",
       "name": "NOAA",
-      "category": "public_media",
+      "category": "government_archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://www.noaa.gov",
       "apiBaseUrl": "https://www.noaa.gov",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4", "webm"],
-        "directUrl": "asset_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -487,28 +736,49 @@
       "rights": {
         "rehosting": false,
         "license": "asset_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "usgs",
       "name": "USGS",
-      "category": "public_media",
+      "category": "government_archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://www.usgs.gov",
       "apiBaseUrl": "https://www.usgs.gov",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4", "webm"],
-        "directUrl": "asset_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -516,28 +786,49 @@
       "rights": {
         "rehosting": false,
         "license": "asset_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "us_national_archives",
       "name": "U.S. National Archives",
-      "category": "digital_archive",
+      "category": "government_archive",
       "enabled": true,
       "instance_required": false,
-      "baseUrl": "https://www.archives.gov",
-      "apiBaseUrl": "https://www.archives.gov",
+      "baseUrl": "https://catalog.archives.gov",
+      "apiBaseUrl": "https://catalog.archives.gov",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/api/v2/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/id/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4", "webm"],
-        "directUrl": "asset_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -545,29 +836,52 @@
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "prelinger_archives",
       "name": "Prelinger Archives",
-      "category": "film_archive",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://archive.org",
       "apiBaseUrl": "https://archive.org",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/advancedsearch.php",
+        "query": {
+          "q": "collection:prelinger AND ({query})",
+          "fl[]": "identifier,title,year",
+          "rows": "50",
+          "output": "json"
+        }
       },
       "resolve": {
         "enabled": true,
+        "method": "GET",
         "path": "/metadata/{id}"
       },
       "playback": {
         "enabled": true,
         "types": ["mp4", "ogv", "webm"],
-        "directUrl": "item_dependent"
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -575,13 +889,26 @@
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "europeana",
       "name": "Europeana",
-      "category": "digital_archive",
+      "category": "cultural_archive",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://api.europeana.eu",
@@ -592,30 +919,49 @@
         "path": "/record/v2/search.json",
         "query": {
           "query": "{query}",
-          "wskey": "{EUROPEANA_API_KEY}"
+          "wskey": "{secret:EUROPEANA_API_KEY}"
         }
       },
       "resolve": {
         "enabled": true,
-        "path": "/record/v2/{id}.json"
+        "method": "GET",
+        "path": "/record/v2/{id}.json",
+        "query": {
+          "wskey": "{secret:EUROPEANA_API_KEY}"
+        }
       },
       "playback": {
-        "enabled": "item_dependent",
-        "types": ["mp4", "webm", "external"]
+        "enabled": true,
+        "types": ["mp4", "webm", "ogg"],
+        "directUrl": true
       },
+      "subtitles": false,
       "authentication": {
         "required": true,
-        "type": "api_key",
+        "type": "query",
         "secretName": "EUROPEANA_API_KEY"
       },
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
-      "id": "nfb",
+      "id": "national_film_board_canada",
       "name": "National Film Board of Canada",
       "category": "film_archive",
       "enabled": true,
@@ -623,15 +969,24 @@
       "baseUrl": "https://www.nfb.ca",
       "apiBaseUrl": "https://www.nfb.ca",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search/",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/film/{id}/"
       },
       "playback": {
-        "enabled": "platform_dependent",
-        "types": ["platform_player"]
+        "enabled": true,
+        "types": ["mp4", "hls"],
+        "directUrl": false
       },
+      "subtitles": true,
       "authentication": {
         "required": false,
         "type": "none"
@@ -639,11 +994,24 @@
       "rights": {
         "rehosting": false,
         "license": "title_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
-      "id": "bfi",
+      "id": "bfi_national_archive",
       "name": "BFI National Archive",
       "category": "film_archive",
       "enabled": true,
@@ -651,15 +1019,24 @@
       "baseUrl": "https://www.bfi.org.uk",
       "apiBaseUrl": "https://www.bfi.org.uk",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/{id}"
       },
       "playback": {
-        "enabled": "title_dependent",
-        "types": ["platform_player"]
+        "enabled": true,
+        "types": ["mp4", "hls"],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -667,27 +1044,49 @@
       "rights": {
         "rehosting": false,
         "license": "title_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "national_library_scotland",
       "name": "National Library of Scotland",
-      "category": "digital_archive",
+      "category": "archive",
       "enabled": true,
       "instance_required": false,
-      "baseUrl": "https://www.nls.uk",
-      "apiBaseUrl": "https://www.nls.uk",
+      "baseUrl": "https://digital.nls.uk",
+      "apiBaseUrl": "https://digital.nls.uk",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/item/{id}"
       },
       "playback": {
-        "enabled": "item_dependent",
-        "types": ["mp4", "webm", "external"]
+        "enabled": true,
+        "types": ["mp4", "webm"],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -695,6 +1094,14 @@
       "rights": {
         "rehosting": false,
         "license": "item_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": false,
+        "live": false
       }
     },
 
@@ -707,15 +1114,24 @@
       "baseUrl": "https://www.koreafilm.or.kr",
       "apiBaseUrl": "https://www.koreafilm.or.kr",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/search",
+        "query": {
+          "q": "{query}"
+        }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/film/{id}"
       },
       "playback": {
-        "enabled": "title_dependent",
-        "types": ["platform_player"]
+        "enabled": true,
+        "types": ["mp4", "hls"],
+        "directUrl": false
       },
+      "subtitles": true,
       "authentication": {
         "required": false,
         "type": "none"
@@ -723,6 +1139,19 @@
       "rights": {
         "rehosting": false,
         "license": "title_specific"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": true,
+        "subtitles": true,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     },
 
@@ -732,33 +1161,55 @@
       "category": "metadata",
       "enabled": true,
       "instance_required": false,
-      "baseUrl": "https://api.kmdb.or.kr",
-      "apiBaseUrl": "https://api.kmdb.or.kr",
+      "baseUrl": "https://api.koreafilm.or.kr",
+      "apiBaseUrl": "https://api.koreafilm.or.kr",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/openapi-data2/wisenut/search_api/search_json2.jsp",
+        "query": {
+          "collection": "kmdb_new2",
+          "query": "{query}",
+          "ServiceKey": "{secret:KMDB_API_KEY}"
+        }
       },
       "resolve": {
         "enabled": false
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": true,
-        "type": "api_key",
+        "type": "query",
         "secretName": "KMDB_API_KEY"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": false,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "anilist",
       "name": "AniList",
-      "category": "anime_metadata",
+      "category": "metadata",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://graphql.anilist.co",
@@ -766,29 +1217,49 @@
       "search": {
         "enabled": true,
         "method": "POST",
-        "path": "/"
+        "path": "/",
+        "body": {
+          "query": "{query}"
+        }
       },
       "resolve": {
-        "enabled": false
+        "enabled": true,
+        "method": "POST",
+        "path": "/"
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "jikan",
       "name": "Jikan",
-      "category": "anime_metadata",
+      "category": "metadata",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://api.jikan.moe",
@@ -803,26 +1274,42 @@
       },
       "resolve": {
         "enabled": true,
-        "path": "/anime/{id}/full"
+        "method": "GET",
+        "path": "/anime/{id}"
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "kitsu",
       "name": "Kitsu",
-      "category": "anime_metadata",
+      "category": "metadata",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://kitsu.io",
@@ -837,19 +1324,35 @@
       },
       "resolve": {
         "enabled": true,
+        "method": "GET",
         "path": "/anime/{id}"
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
@@ -870,27 +1373,44 @@
         }
       },
       "resolve": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/{type}/{id}"
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": true,
-        "type": "api_key",
+        "type": "bearer",
         "secretName": "TMDB_API_KEY"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "tvmaze",
       "name": "TVmaze",
-      "category": "tv_metadata",
+      "category": "metadata",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://api.tvmaze.com",
@@ -905,42 +1425,62 @@
       },
       "resolve": {
         "enabled": true,
+        "method": "GET",
         "path": "/shows/{id}"
       },
       "playback": {
         "enabled": false,
-        "types": []
+        "types": [],
+        "directUrl": false
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
       },
       "rights": {
         "rehosting": false,
-        "license": "metadata_specific"
+        "license": "metadata_only"
+      },
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": true,
+        "playback": false,
+        "subtitles": false,
+        "live": false
+      },
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": false,
+        "discardEmptyResults": true
       }
     },
 
     {
       "id": "iptv_org",
       "name": "iptv-org",
-      "category": "live_tv_index",
+      "category": "live_index",
       "enabled": true,
       "instance_required": false,
       "baseUrl": "https://iptv-org.github.io",
       "apiBaseUrl": "https://iptv-org.github.io",
       "search": {
-        "enabled": true
+        "enabled": true,
+        "method": "GET",
+        "path": "/iptv/index.m3u",
+        "query": {}
       },
       "resolve": {
-        "enabled": true
+        "enabled": false
       },
       "playback": {
         "enabled": true,
         "types": ["hls", "m3u8"],
-        "live": true,
-        "directUrl": true
+        "directUrl": true,
+        "live": true
       },
+      "subtitles": false,
       "authentication": {
         "required": false,
         "type": "none"
@@ -948,122 +1488,19 @@
       "rights": {
         "rehosting": false,
         "license": "channel_specific"
-      }
-    },
-
-    {
-      "id": "odysee",
-      "name": "Odysee",
-      "category": "video_platform",
-      "enabled": true,
-      "instance_required": false,
-      "baseUrl": "https://odysee.com",
-      "apiBaseUrl": "https://api.na-backend.odysee.com",
-      "search": {
-        "enabled": true
       },
-      "resolve": {
-        "enabled": true
+      "capabilities": {
+        "metadata": true,
+        "search": true,
+        "resolve": false,
+        "playback": true,
+        "subtitles": false,
+        "live": true
       },
-      "playback": {
-        "enabled": true,
-        "types": ["platform_stream"]
-      },
-      "authentication": {
-        "required": false,
-        "type": "platform_specific"
-      },
-      "rights": {
-        "rehosting": false,
-        "license": "content_specific"
-      }
-    },
-
-    {
-      "id": "vimeo",
-      "name": "Vimeo",
-      "category": "video_platform",
-      "enabled": true,
-      "instance_required": false,
-      "baseUrl": "https://api.vimeo.com",
-      "apiBaseUrl": "https://api.vimeo.com",
-      "search": {
-        "enabled": true
-      },
-      "resolve": {
-        "enabled": true
-      },
-      "playback": {
-        "enabled": true,
-        "types": ["hls", "dash", "mp4"],
-        "directUrl": "permission_dependent"
-      },
-      "authentication": {
-        "required": true,
-        "type": "oauth_or_token",
-        "secretName": "VIMEO_ACCESS_TOKEN"
-      },
-      "rights": {
-        "rehosting": false,
-        "license": "video_specific"
-      }
-    },
-
-    {
-      "id": "dailymotion",
-      "name": "Dailymotion",
-      "category": "video_platform",
-      "enabled": true,
-      "instance_required": false,
-      "baseUrl": "https://api.dailymotion.com",
-      "apiBaseUrl": "https://api.dailymotion.com",
-      "search": {
-        "enabled": true
-      },
-      "resolve": {
-        "enabled": true
-      },
-      "playback": {
-        "enabled": true,
-        "types": ["platform_stream"],
-        "directUrl": "permission_dependent"
-      },
-      "authentication": {
-        "required": "api_dependent",
-        "type": "api_key_or_oauth"
-      },
-      "rights": {
-        "rehosting": false,
-        "license": "video_specific"
-      }
-    },
-
-    {
-      "id": "creative_commons",
-      "name": "Creative Commons",
-      "category": "open_media",
-      "enabled": true,
-      "instance_required": false,
-      "baseUrl": "https://search.creativecommons.org",
-      "apiBaseUrl": null,
-      "search": {
-        "enabled": "search_frontend",
-        "method": "GET"
-      },
-      "resolve": {
-        "enabled": "source_dependent"
-      },
-      "playback": {
-        "enabled": "source_dependent",
-        "types": ["mp4", "webm", "hls", "external"]
-      },
-      "authentication": {
-        "required": false,
-        "type": "none"
-      },
-      "rights": {
-        "rehosting": false,
-        "license": "asset_specific"
+      "validation": {
+        "requireTitle": true,
+        "requireIdOrUrl": true,
+        "discardEmptyResults": true
       }
     }
   ]
