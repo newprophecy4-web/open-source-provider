@@ -30,7 +30,7 @@ export default {
       if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
       const url = new URL(request.url);
       if (request.method !== "GET") return errorResponse("INVALID_REQUEST", "Only GET and OPTIONS are supported", 405);
-      if (url.pathname === "/") return json({ ok: true, name: "Open Source Provider", service: "Open Source Provider", poweredBy: "Prophecy", version: VERSION, providers: enabledProviders().length });
+      if (url.pathname === "/") return json({ ok: true, name: "Open Source Provider", service: "Open Source Provider", poweredBy: "Prophecy", version: VERSION, providers: enabledProviders().length, routes: ["/", "/health", "/providers", "/search", "/resolve"] });
       if (url.pathname === "/health") return json({ ok: true, status: "online", version: VERSION, providerCount: allProviders().length, enabledProviderCount: enabledProviders().length, timestamp: new Date().toISOString() });
       if (url.pathname === "/providers") return handleProviders(url);
       if (url.pathname === "/search") return await handleSearch(request, env, ctx);
@@ -106,10 +106,12 @@ function parseQuery(original, params) {
   let season = parsePositiveInt(params.get("season"));
   let episode = parsePositiveInt(params.get("episode"));
   let year = parseYear(params.get("year"));
-  const seasonMatch = searchQuery.match(/(?:^|\s)(?:s(?:eason)?\s*)0*(\d{1,3})(?=\s|$)/i);
-  const episodeMatch = searchQuery.match(/(?:^|\s)(?:e(?:p(?:isode)?)?\s*)0*(\d{1,4})(?=\s|$)/i);
-  const longMatch = searchQuery.match(/(?:^|\s)season\s*0*(\d{1,3})\s+episode\s*0*(\d{1,4})(?=\s|$)/i);
+  const longMatch = searchQuery.match(/\bseason\s*0*(\d{1,3})\s+episode\s*0*(\d{1,4})\b/i);
+  const compactMatch = searchQuery.match(/\bs\s*0*(\d{1,3})\s*e\s*0*(\d{1,4})\b/i);
+  const seasonMatch = searchQuery.match(/\b(?:s(?:eason)?)[ ._-]*0*(\d{1,3})\b/i);
+  const episodeMatch = searchQuery.match(/\b(?:e(?:p(?:isode)?)?)[ ._-]*0*(\d{1,4})\b/i);
   if (longMatch) { season ??= Number(longMatch[1]); episode ??= Number(longMatch[2]); }
+  else if (compactMatch) { season ??= Number(compactMatch[1]); episode ??= Number(compactMatch[2]); }
   else { season ??= seasonMatch ? Number(seasonMatch[1]) : null; episode ??= episodeMatch ? Number(episodeMatch[1]) : null; }
   if (!year) { const m = searchQuery.match(/(?:^|\s)((?:19|20)\d{2})(?=\s|$)/); if (m) year = Number(m[1]); }
   searchQuery = searchQuery
@@ -218,15 +220,16 @@ function normalizeResult(item, provider, request) {
   if (!title && !id && !pageUrl) return null;
   if (request.season != null && season != null && request.season !== season) return null;
   if (request.episode != null && episode != null && request.episode !== episode) return null;
+  const contentClass = classifyContent(title, request);
   return {
     provider: provider.id, providerName: provider.name || provider.id, providerItemId: id || null, title: title || null,
     originalTitle: cleanText(get("originalTitle", ["originalTitle", "original_title"])) || null,
-    type: normalizeType(get("type", ["type", "media_type", "content_type"]) || request.type),
+    type: resultType(get("type", ["type", "media_type", "content_type"]), contentClass, request.type),
     year: toNumber(get("year", ["year", "releaseYear", "release_year"])), season, episode,
     episodeTitle: cleanText(get("episodeTitle", ["episodeTitle", "episode_title"])) || null,
     url: pageUrl, urlType: playback.type, language: normalizeArray(get("language", ["language", "languages", "lang"])), subtitle: normalizeArray(get("subtitles", ["subtitle", "subtitles", "captions"])),
     duration: toNumber(get("duration", ["duration", "durationSeconds", "duration_seconds"])), thumbnail: normalizeImageUrl(get("thumbnail", ["thumbnail", "thumbnailUrl", "thumbnail_url", "poster", "image"])),
-    contentClass: classifyContent(title, request), relevanceScore: 0,
+    contentClass, relevanceScore: 0,
     license: get("license", ["license", "licence"]) || provider.rights?.license || null, rights: provider.rights || null, playback
   };
 }
@@ -287,6 +290,12 @@ function classifyContent(title, query) {
   if (/\b(?:episode|ep|cap|chapter)\s*\d+\b|\bs\d+\s*e\d+\b|\b(?:shippuden|shippuuden|naruto|one piece|lookism)[\s._-]+\d{2,3}\b/i.test(text)) return "EPISODE";
   if (query?.year != null || /\b(?:19|20)\d{2}\b/.test(text)) return "MOVIE";
   return "MAIN_TITLE";
+}
+function resultType(raw, contentClass, requestedType) {
+  const mapped = normalizeType(raw || requestedType);
+  if (contentClass === "EPISODE") return "episode";
+  if (contentClass === "MOVIE" || contentClass === "SPECIAL") return "movie";
+  return mapped;
 }
 function relevanceScore(title, wanted, classification, query) {
   if (title === wanted) return 100;
