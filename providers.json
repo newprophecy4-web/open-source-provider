@@ -1,0 +1,467 @@
+{
+  "providers": [
+    {
+      "id": "peertube",
+      "name": "PeerTube",
+      "enabled": true,
+      "category": "video_platform",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true,
+        "hls": true,
+        "dash": true
+      },
+      "auth": "optional",
+      "license": "varies_by_instance_and_video",
+      "api": {
+        "baseUrl": "https://INSTANCE/api/v1",
+        "searchPath": "/search/videos?search={query}",
+        "videoPath": "/videos/{id}"
+      }
+    },
+
+    {
+      "id": "internet_archive",
+      "name": "Internet Archive",
+      "enabled": true,
+      "category": "archive",
+      "types": ["movie", "video", "documentary"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "none",
+      "license": "item_specific",
+      "api": {
+        "baseUrl": "https://archive.org",
+        "searchPath": "/advancedsearch.php?q={query}&output=json",
+        "metadataPath": "/metadata/{id}"
+      }
+    },
+
+    {
+      "id": "wikimedia_commons",
+      "name": "Wikimedia Commons",
+      "enabled": true,
+      "category": "media_archive",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "none",
+      "license": "file_specific",
+      "api": {
+        "baseUrl": "https://commons.wikimedia.org",
+        "searchPath": "/w/api.php?action=query&generator=search&gsrsearch={query}&gsrnamespace=6&format=json",
+        "filePath": "/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json"
+      }
+    },
+
+    {
+      "id": "nasa_svs",
+      "name": "NASA Scientific Visualization Studio",
+      "enabled": true,
+      "category": "public_media",
+      "types": ["documentary", "science", "video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "none",
+      "license": "item_specific",
+      "api": {
+        "baseUrl": "https://svs.gsfc.nasa.gov",
+        "searchPath": "/api/search/?q={query}"
+      }
+    },
+
+    {
+      "id": "library_of_congress",
+      "name": "Library of Congress",
+      "enabled": true,
+      "category": "archive",
+      "types": ["video", "documentary"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "none",
+      "license": "item_specific",
+      "api": {
+        "baseUrl": "https://www.loc.gov",
+        "searchPath": "/search/?q={query}&fo=json",
+        "itemPath": "/item/{id}/?fo=json"
+      }
+    },
+
+    {
+      "id": "dvids",
+      "name": "DVIDS",
+      "enabled": true,
+      "category": "public_media",
+      "types": ["video", "documentary"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "api_key",
+      "license": "terms_specific",
+      "api": {
+        "baseUrl": "https://api.dvidshub.net",
+        "searchPath": "/search?q={query}"
+      }
+    },
+
+    {
+      "id": "prelinger",
+      "name": "Prelinger Archives",
+      "enabled": true,
+      "category": "archive",
+      "types": ["movie", "documentary", "historical_video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "directVideo": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "nfb",
+      "name": "National Film Board of Canada",
+      "enabled": true,
+      "category": "film_archive",
+      "types": ["movie", "documentary", "animation"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "europeana",
+      "name": "Europeana",
+      "enabled": true,
+      "category": "digital_archive",
+      "types": ["video", "film", "documentary"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "api_key",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "dailymotion",
+      "name": "Dailymotion",
+      "enabled": true,
+      "category": "video_platform",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "api_key",
+      "license": "platform_specific"
+    },
+
+    {
+      "id": "vimeo",
+      "name": "Vimeo",
+      "enabled": true,
+      "category": "video_platform",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "oauth_or_token",
+      "license": "video_specific"
+    },
+
+    {
+      "id": "owncast",
+      "name": "Owncast",
+      "enabled": true,
+      "category": "open_source_streaming",
+      "types": ["live"],
+      "capabilities": {
+        "search": false,
+        "resolve": true,
+        "live": true
+      },
+      "auth": "instance_specific",
+      "license": "instance_specific"
+    },
+
+    {
+      "id": "mediagoblin",
+      "name": "MediaGoblin",
+      "enabled": true,
+      "category": "open_source_media",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "instance_specific",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "mediacms",
+      "name": "MediaCMS",
+      "enabled": true,
+      "category": "open_source_video",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "instance_specific",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "nasa",
+      "name": "NASA",
+      "enabled": true,
+      "category": "public_media",
+      "types": ["video", "science"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "noaa",
+      "name": "NOAA",
+      "enabled": true,
+      "category": "public_media",
+      "types": ["video", "science", "weather"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "usgs",
+      "name": "USGS",
+      "enabled": true,
+      "category": "public_media",
+      "types": ["video", "science"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "national_archives_us",
+      "name": "U.S. National Archives",
+      "enabled": true,
+      "category": "archive",
+      "types": ["video", "historical"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "bfi",
+      "name": "BFI National Archive",
+      "enabled": true,
+      "category": "film_archive",
+      "types": ["film", "documentary", "video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "library_scotland",
+      "name": "National Library of Scotland",
+      "enabled": true,
+      "category": "archive",
+      "types": ["video", "historical"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "item_specific"
+    },
+
+    {
+      "id": "korean_film_archive",
+      "name": "Korean Film Archive",
+      "enabled": true,
+      "category": "film_archive",
+      "types": ["movie", "korean_film"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "platform_specific"
+    },
+
+    {
+      "id": "kmdb",
+      "name": "KMDb",
+      "enabled": true,
+      "category": "metadata_archive",
+      "types": ["movie", "kdrama"],
+      "capabilities": {
+        "search": true,
+        "resolve": false
+      },
+      "auth": "api_key",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "anilist",
+      "name": "AniList",
+      "enabled": true,
+      "category": "metadata",
+      "types": ["anime"],
+      "capabilities": {
+        "search": true,
+        "metadata": true,
+        "resolve": false
+      },
+      "auth": "none",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "jikan",
+      "name": "Jikan",
+      "enabled": true,
+      "category": "metadata",
+      "types": ["anime"],
+      "capabilities": {
+        "search": true,
+        "metadata": true,
+        "resolve": false
+      },
+      "auth": "none",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "kitsu",
+      "name": "Kitsu",
+      "enabled": true,
+      "category": "metadata",
+      "types": ["anime"],
+      "capabilities": {
+        "search": true,
+        "metadata": true,
+        "resolve": false
+      },
+      "auth": "none",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "tmdb",
+      "name": "TMDB",
+      "enabled": true,
+      "category": "metadata",
+      "types": ["anime", "movie", "tv", "kdrama"],
+      "capabilities": {
+        "search": true,
+        "metadata": true,
+        "resolve": false
+      },
+      "auth": "api_key",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "tvmaze",
+      "name": "TVmaze",
+      "enabled": true,
+      "category": "metadata",
+      "types": ["tv", "kdrama"],
+      "capabilities": {
+        "search": true,
+        "metadata": true,
+        "resolve": false
+      },
+      "auth": "none",
+      "license": "metadata_specific"
+    },
+
+    {
+      "id": "iptv_org",
+      "name": "iptv-org",
+      "enabled": true,
+      "category": "channel_index",
+      "types": ["live_tv"],
+      "capabilities": {
+        "search": true,
+        "resolve": true,
+        "live": true
+      },
+      "auth": "none",
+      "license": "channel_specific"
+    },
+
+    {
+      "id": "odyssey",
+      "name": "Odysee",
+      "enabled": true,
+      "category": "video_platform",
+      "types": ["video"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "platform_specific",
+      "license": "content_specific"
+    },
+
+    {
+      "id": "creative_commons",
+      "name": "Creative Commons Media",
+      "enabled": true,
+      "category": "open_media",
+      "types": ["video", "film", "animation"],
+      "capabilities": {
+        "search": true,
+        "resolve": true
+      },
+      "auth": "none",
+      "license": "asset_specific"
+    }
+  ]
+    }
