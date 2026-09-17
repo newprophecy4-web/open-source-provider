@@ -82,7 +82,7 @@ async function handleSearch(request, env, ctx) {
       failures.push({ provider: providers[i]?.id, code: value.code || "PROVIDER_ERROR", message: value.message || value.error || "Provider failed" });
     }
   }
-  const results = dedupe(successful).filter(r => matchesQuery(r, query)).slice(0, DEFAULTS.maxTotalResults);
+  const results = dedupe(successful).filter(r => matchesQuery(r, query)).sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, DEFAULTS.maxTotalResults);
   const response = json({ ok: true, query: { original: query.originalQuery, q: query.searchQuery, type: query.type, season: query.season, episode: query.episode, year: query.year }, count: results.length, results, providers: { requested: providers.length, successful: providers.length - failures.length, failed: failures.length, failures } });
   if (!results.some(r => r.playback?.available && r.playback?.direct)) ctx.waitUntil(putCache(cacheKey, response.clone(), DEFAULTS.cacheTtlSeconds));
   return response;
@@ -225,11 +225,13 @@ function normalizeResult(item, provider, request) {
     year: toNumber(get("year", ["year", "releaseYear", "release_year"])), season, episode,
     episodeTitle: cleanText(get("episodeTitle", ["episodeTitle", "episode_title"])) || null,
     url: pageUrl, urlType: playback.type, language: normalizeArray(get("language", ["language", "languages", "lang"])), subtitle: normalizeArray(get("subtitles", ["subtitle", "subtitles", "captions"])),
-    duration: toNumber(get("duration", ["duration", "durationSeconds", "duration_seconds"])), thumbnail: normalizeUrl(get("thumbnail", ["thumbnail", "thumbnailUrl", "thumbnail_url", "poster", "image"]), provider),
+    duration: toNumber(get("duration", ["duration", "durationSeconds", "duration_seconds"])), thumbnail: normalizeImageUrl(get("thumbnail", ["thumbnail", "thumbnailUrl", "thumbnail_url", "poster", "image"])),
+    contentClass: classifyContent(title, request), relevanceScore: 0,
     license: get("license", ["license", "licence"]) || provider.rights?.license || null, rights: provider.rights || null, playback
   };
 }
 function normalizeUrl(raw, provider) { if (typeof raw !== "string" || !raw.trim()) return null; try { const base = provider.apiBaseUrl || provider.baseUrl; const url = new URL(raw.trim(), base); return ["http:", "https:"].includes(url.protocol) ? url.toString() : null; } catch { return null; } }
+function normalizeImageUrl(raw) { if (typeof raw !== "string" || !/^https?:\/\//i.test(raw.trim())) return null; try { const url = new URL(raw.trim()); return /\.(?:avif|gif|jpe?g|png|svg|webp)(?:$|\?)/i.test(url.pathname) || /(?:image|thumbnail|poster|iiurl|media)/i.test(url.pathname) ? url.toString() : null; } catch { return null; } }
 function detectPlayback(url, provider, item) {
   const metadataOnly = provider.capabilities?.playback === false || provider.playback?.enabled === false;
   if (!url || metadataOnly) return { available: false, direct: false, type: url ? "page" : "unknown" };
@@ -244,8 +246,8 @@ function matchesQuery(result, query) {
   if (!result.title) return false;
   const wanted = normalizeTitle(query.searchQuery), title = normalizeTitle(result.title), original = normalizeTitle(result.originalTitle || "");
   if (!wanted) return false;
-  const excluded = /[#]|\b(gameplay|game|reaction|review|amv|ost|soundtrack|trailer|fan edit|fanedit|favorites?|discussion|official teaser|recap|bonus|behind the scenes|manga|maxxing|aesthetics|shitty advice)\b/i;
-  if (excluded.test(title)) return false;
+  const classification = classifyContent(result.title, query);
+  if (["TRAILER", "AMV", "REACTION", "REVIEW", "GAME", "WIKI", "MANGA", "IMAGE", "MEME", "SOCIAL", "COMMENTARY"].includes(classification)) return false;
   const exact = title === wanted || original === wanted;
   const strong = title.includes(wanted) || wanted.includes(title);
   if (!exact && !strong) return false;
@@ -262,12 +264,40 @@ function matchesQuery(result, query) {
   if (query.year != null && result.year != null && query.year !== result.year) return false;
   if (query.season != null && result.season != null && query.season !== result.season) return false;
   if (query.episode != null && result.episode != null && query.episode !== result.episode) return false;
-  return true;
+  result.contentClass = classification;
+  result.relevanceScore = relevanceScore(title, wanted, classification, query);
+  return result.relevanceScore > 0;
 }
 function dedupe(results) { const seen = new Set(), output = []; for (const result of results) { const key = result.providerItemId ? `${result.provider}|${result.providerItemId}` : `${normalizeTitle(result.title)}|${result.season || ""}|${result.episode || ""}|${result.url || ""}`; if (!seen.has(key)) { seen.add(key); output.push(result); } } return output; }
 function firstPath(object, paths) { for (const path of paths) { const value = getPath(object, path); if (value !== undefined && value !== null && value !== "") return value; } return null; }
 function getPath(object, path) { return String(path).split(".").reduce((value, key) => value == null ? undefined : value[key], object); }
 function normalizeTitle(value) { return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim(); }
+function classifyContent(title, query) {
+  const text = normalizeTitle(title);
+  if (/(^|\s)(trailer|teaser)(\s|$)|trailer|teaser/i.test(text)) return "TRAILER";
+  if (/(^|\s)(amv|music video|ost|soundtrack)(\s|$)/i.test(text)) return "AMV";
+  if (/(^|\s)(reaction|reacts|watching)(\s|$)/i.test(text)) return "REACTION";
+  if (/(^|\s)(review|recap|explained|analysis|commentary)(\s|$)/i.test(text)) return "REVIEW";
+  if (/(^|\s)(game|gameplay|rpg|death battle|vs)(\s|$)|g4tv|ultimate ninja storm/i.test(text)) return "GAME";
+  if (/(^|\s)(wiki|fandom|wikia)(\s|$)/i.test(text)) return "WIKI";
+  if (/(^|\s)manga(\s|$)/i.test(text)) return "MANGA";
+  if (/(^|\s)(meme|memes)(\s|$)/i.test(text)) return "MEME";
+  if (/[#@]/.test(String(title)) || /\b(favorites?|gym|red pill|masculinity|social|tiktok|instagram)\b/i.test(text)) return "SOCIAL";
+  if (/(^|\s)(image|photo|wallpaper|gallery)(\s|$)/i.test(text)) return "IMAGE";
+  if (/\b(?:episode|ep|cap|chapter)\s*\d+\b|\bs\d+\s*e\d+\b|\b(?:shippuden|shippuuden|naruto|one piece|lookism)[\s._-]+\d{2,3}\b/i.test(text)) return "EPISODE";
+  if (query?.year != null || /\b(?:19|20)\d{2}\b/.test(text)) return "MOVIE";
+  return "MAIN_TITLE";
+}
+function relevanceScore(title, wanted, classification, query) {
+  if (title === wanted) return 100;
+  if (normalizeTitle(query.originalQuery) === title) return 95;
+  const wantedTokens = wanted.split(" ").filter(Boolean), titleTokens = new Set(title.split(" "));
+  const allTokens = wantedTokens.every(token => titleTokens.has(token));
+  if (!allTokens && !title.includes(wanted)) return 0;
+  if (classification === "EPISODE") return 80;
+  if (classification === "MOVIE" || classification === "SPECIAL") return 70;
+  return title.startsWith(wanted) ? 75 : 45;
+}
 function normalizeType(value) { const text = String(value || "unknown").toLowerCase(); return text.includes("anime") ? "anime" : text.includes("movie") || text.includes("film") ? "movie" : text.includes("kdrama") || text.includes("k-drama") ? "kdrama" : text.includes("tv") || text.includes("series") || text.includes("show") ? "tv" : "unknown"; }
 function normalizeArray(value) { return Array.isArray(value) ? value : typeof value === "string" ? value.split(",").map(x => x.trim()).filter(Boolean) : []; }
 function toNumber(value) { if (value === null || value === undefined || value === "") return null; const n = Number(value); return Number.isFinite(n) ? n : null; }
