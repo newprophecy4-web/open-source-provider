@@ -1,0 +1,11 @@
+{
+  "name": "open-source-provider",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "wrangler dev --local --ip 0.0.0.0 --port $PORT"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
