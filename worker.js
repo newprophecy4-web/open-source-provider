@@ -1,99 +1,111 @@
-/**
- * Open Source Provider
- * Powered by Prophecy
- *
- * Cloudflare Worker
- *
- * Responsibilities:
- * - Provider registry loading
- * - Request validation
- * - Parallel provider discovery
- * - Timeout + retry
- * - Caching
- * - CORS
- * - Rate limiting hooks
- * - Unified response format
- *
- * Provider-specific configuration lives in providers.json.
- */
+import PROVIDER_CONFIG from "./providers.json";
 
-const VERSION = "1.0.0";
+const VERSION = "2.0.0";
 
 const DEFAULTS = {
-  timeoutMs: 7000,
+  timeoutMs: 8000,
   retries: 1,
   cacheTtl: 300,
-  maxProviders: 20,
-  maxResults: 100
+  maxProviders: 50,
+  maxResultsPerProvider: 50,
+  maxTotalResults: 200
 };
 
-// --------------------------------------------------
-// CORS
-// --------------------------------------------------
+const ALLOWED_METHODS = new Set(["GET", "POST"]);
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400"
-};
+const PLAYBACK_TYPES = new Set([
+  "hls",
+  "m3u8",
+  "dash",
+  "mp4",
+  "webm",
+  "ogv",
+  "webrtc",
+  "rtmp",
+  "direct",
+  "external",
+  "page",
+  "platform_player",
+  "source_platform_stream",
+  "platform_source",
+  "unknown"
+]);
 
-// --------------------------------------------------
-// Main Worker
-// --------------------------------------------------
+/* =========================================================
+   PROVIDER REGISTRY
+   ========================================================= */
+
+function loadProviders() {
+  if (Array.isArray(PROVIDER_CONFIG)) {
+    return PROVIDER_CONFIG;
+  }
+
+  if (
+    PROVIDER_CONFIG &&
+    Array.isArray(PROVIDER_CONFIG.providers)
+  ) {
+    return PROVIDER_CONFIG.providers;
+  }
+
+  return [];
+}
+
+function getProviders() {
+  return loadProviders().filter(
+    provider => provider && provider.enabled !== false
+  );
+}
+
+function getProvider(id) {
+  return getProviders().find(
+    provider => provider.id === id
+  );
+}
+
+/* =========================================================
+   MAIN ENTRY
+   ========================================================= */
 
 export default {
   async fetch(request, env, ctx) {
     try {
       if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: CORS_HEADERS
-        });
+        return corsResponse(
+          new Response(null, { status: 204 })
+        );
       }
 
       const url = new URL(request.url);
 
       if (url.pathname === "/") {
         return json({
-          success: true,
-          name: "Open Source Provider",
+          ok: true,
+          service: "Open Source Provider",
           poweredBy: "Prophecy",
           version: VERSION,
-          status: "online"
+          providers: getProviders().length
         });
       }
 
       if (url.pathname === "/health") {
-        return json({
-          success: true,
-          status: "healthy",
-          version: VERSION,
-          timestamp: new Date().toISOString()
-        });
+        return handleHealth();
       }
 
       if (url.pathname === "/providers") {
-        const providers = await loadProviders(env);
-
-        return json({
-          success: true,
-          count: providers.length,
-          providers: providers.map(publicProviderInfo)
-        });
+        return handleProviders(url);
       }
 
       if (url.pathname === "/search") {
-        return await handleSearch(request, env, ctx);
+        return handleSearch(request, env, ctx);
       }
 
       if (url.pathname === "/resolve") {
-        return await handleResolve(request, env, ctx);
+        return handleResolve(request, env, ctx);
       }
 
       return errorResponse(
         "NOT_FOUND",
-        "Endpoint not found",
+        "Route not found",
         404
       );
 
@@ -109,156 +121,179 @@ export default {
   }
 };
 
-// --------------------------------------------------
-// SEARCH
-// --------------------------------------------------
+/* =========================================================
+   HEALTH
+   ========================================================= */
+
+function handleHealth() {
+  return json({
+    ok: true,
+    status: "online",
+    version: VERSION,
+    providerCount: getProviders().length,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/* =========================================================
+   PROVIDER LIST
+   ========================================================= */
+
+function handleProviders(url) {
+  const includeDisabled =
+    url.searchParams.get("includeDisabled") === "true";
+
+  const providers = includeDisabled
+    ? loadProviders()
+    : getProviders();
+
+  return json({
+    ok: true,
+    count: providers.length,
+
+    providers: providers.map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category || "unknown",
+      enabled: p.enabled !== false,
+      instanceRequired: !!p.instance_required,
+
+      search: !!p.search?.enabled,
+
+      resolve: !!p.resolve?.enabled,
+
+      playback: !!p.playback?.enabled,
+
+      playbackTypes:
+        p.playback?.types || [],
+
+      authentication:
+        p.authentication?.type || "none",
+
+      rights:
+        p.rights || null
+    }))
+  });
+}
+
+/* =========================================================
+   SEARCH
+   ========================================================= */
 
 async function handleSearch(request, env, ctx) {
   const url = new URL(request.url);
 
-  const query = cleanString(
-    url.searchParams.get("q")
-  );
-
-  const type = cleanString(
-    url.searchParams.get("type")
-  );
-
-  const season = toPositiveInt(
-    url.searchParams.get("season")
-  );
-
-  const episode = toPositiveInt(
-    url.searchParams.get("episode")
-  );
+  const query =
+    cleanText(url.searchParams.get("q"));
 
   if (!query) {
     return errorResponse(
       "INVALID_REQUEST",
-      "Search query is required",
+      "Missing q parameter",
       400
     );
   }
 
-  if (query.length > 200) {
-    return errorResponse(
-      "INVALID_REQUEST",
-      "Search query is too long",
-      400
+  const type =
+    cleanText(url.searchParams.get("type"));
+
+  const season =
+    parseNumber(url.searchParams.get("season"));
+
+  const episode =
+    parseNumber(url.searchParams.get("episode"));
+
+  const requestedProvider =
+    cleanText(url.searchParams.get("provider"));
+
+  let providers = getProviders()
+    .filter(p => p.search?.enabled !== false);
+
+  if (requestedProvider) {
+    providers = providers.filter(
+      p => p.id === requestedProvider
     );
   }
 
-  const providers = await loadProviders(env);
+  providers =
+    providers.slice(0, DEFAULTS.maxProviders);
 
-  const enabledProviders = providers
-    .filter(provider => provider.enabled !== false)
-    .filter(provider => supportsType(provider, type))
-    .slice(0, DEFAULTS.maxProviders);
-
-  if (!enabledProviders.length) {
-    return json({
-      success: true,
-      query,
-      results: [],
-      providers: [],
-      count: 0
-    });
-  }
-
-  const cacheKey = new Request(
-    new URL(
-      `/__cache/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type || "")}&season=${season || ""}&episode=${episode || ""}`,
-      url.origin
-    ),
-    { method: "GET" }
+  const cacheKey = createCacheKey(
+    "search",
+    {
+      q: query,
+      type,
+      season,
+      episode,
+      provider: requestedProvider || "all"
+    }
   );
 
-  const cached = await caches.default.match(cacheKey);
+  const cached =
+    await getCache(cacheKey);
 
   if (cached) {
-    const data = await cached.json();
-
-    return json({
-      ...data,
-      cached: true
-    });
+    return cached;
   }
 
-  const startedAt = Date.now();
-
-  const tasks = enabledProviders.map(provider =>
-    queryProvider(
-      provider,
-      {
-        query,
-        type,
-        season,
-        episode
-      },
-      env
-    )
+  const results = await parallelMap(
+    providers,
+    provider =>
+      searchProvider(
+        provider,
+        {
+          query,
+          type,
+          season,
+          episode
+        },
+        env
+      )
   );
 
-  const settled = await Promise.allSettled(tasks);
+  const successful = results
+    .filter(x => x.ok)
+    .flatMap(x => x.results);
 
-  const results = [];
-  const providerStatus = [];
+  const failed = results
+    .filter(x => !x.ok)
+    .map(x => ({
+      provider: x.provider,
+      error: x.error
+    }));
 
-  for (let i = 0; i < settled.length; i++) {
-    const provider = enabledProviders[i];
-    const result = settled[i];
-
-    if (result.status === "fulfilled") {
-      const providerResult = result.value;
-
-      providerStatus.push({
-        id: provider.id,
-        status: "ONLINE",
-        count: providerResult.length
-      });
-
-      results.push(
-        ...providerResult
-      );
-    } else {
-      providerStatus.push({
-        id: provider.id,
-        status: "ERROR",
-        count: 0
-      });
-
-      console.error(
-        `Provider ${provider.id} failed:`,
-        result.reason
-      );
-    }
-  }
-
-  const normalized = normalizeResults(results);
-
-  const responseData = {
-    success: true,
-    query,
-    type: type || null,
-    season: season || null,
-    episode: episode || null,
-    count: Math.min(
-      normalized.length,
-      DEFAULTS.maxResults
-    ),
-    results: normalized.slice(
+  const normalized =
+    deduplicateResults(
+      successful
+    ).slice(
       0,
-      DEFAULTS.maxResults
-    ),
-    providers: providerStatus,
-    latencyMs: Date.now() - startedAt,
-    cached: false
-  };
+      DEFAULTS.maxTotalResults
+    );
 
-  const response = json(responseData);
+  const response = json({
+    ok: true,
+
+    query: {
+      q: query,
+      type: type || null,
+      season: season || null,
+      episode: episode || null
+    },
+
+    count: normalized.length,
+
+    results: normalized,
+
+    providers: {
+      requested: providers.length,
+      successful:
+        providers.length - failed.length,
+      failed
+    }
+  });
 
   ctx.waitUntil(
-    cacheResponse(
+    putCache(
       cacheKey,
       response.clone(),
       DEFAULTS.cacheTtl
@@ -268,22 +303,24 @@ async function handleSearch(request, env, ctx) {
   return response;
 }
 
-// --------------------------------------------------
-// RESOLVE
-// --------------------------------------------------
+/* =========================================================
+   RESOLVE
+   ========================================================= */
 
 async function handleResolve(request, env, ctx) {
   const url = new URL(request.url);
 
-  const providerId = cleanString(
-    url.searchParams.get("provider")
-  );
+  const providerId =
+    cleanText(
+      url.searchParams.get("provider")
+    );
 
-  const itemId = cleanString(
-    url.searchParams.get("id")
-  );
+  const id =
+    cleanText(
+      url.searchParams.get("id")
+    );
 
-  if (!providerId || !itemId) {
+  if (!providerId || !id) {
     return errorResponse(
       "INVALID_REQUEST",
       "provider and id are required",
@@ -291,264 +328,330 @@ async function handleResolve(request, env, ctx) {
     );
   }
 
-  const providers = await loadProviders(env);
-
-  const provider = providers.find(
-    p => p.id === providerId
-  );
+  const provider =
+    getProvider(providerId);
 
   if (!provider) {
     return errorResponse(
       "PROVIDER_NOT_FOUND",
-      "Provider does not exist",
+      "Provider not found",
       404
     );
   }
 
-  if (provider.enabled === false) {
+  if (provider.resolve?.enabled === false) {
     return errorResponse(
-      "PROVIDER_DISABLED",
-      "Provider is disabled",
-      403
+      "RESOLVE_NOT_SUPPORTED",
+      "This provider does not support resolve",
+      400
     );
   }
 
-  const result = await resolveProvider(
-    provider,
-    itemId,
-    env
-  );
+  const result =
+    await resolveProvider(
+      provider,
+      { id },
+      env
+    );
+
+  if (!result.ok) {
+    return errorResponse(
+      result.code || "PROVIDER_ERROR",
+      result.error,
+      502
+    );
+  }
 
   return json({
-    success: true,
+    ok: true,
     provider: provider.id,
-    result
+    result: result.result
   });
 }
 
-// --------------------------------------------------
-// PROVIDER LOADING
-// --------------------------------------------------
+/* =========================================================
+   PROVIDER SEARCH ENGINE
+   ========================================================= */
 
-async function loadProviders(env) {
-  /*
-   * Recommended:
-   *
-   * providers.json should be bundled with the Worker.
-   *
-   * Example import:
-   *
-   * import PROVIDERS from "./providers.json";
-   *
-   * If you use that method, replace this function
-   * with the imported JSON.
-   */
-
-  if (env.PROVIDERS_JSON) {
-    try {
-      const parsed = JSON.parse(
-        env.PROVIDERS_JSON
-      );
-
-      return Array.isArray(parsed)
-        ? parsed
-        : parsed.providers || [];
-    } catch {
-      console.error(
-        "Invalid PROVIDERS_JSON"
-      );
-    }
-  }
-
-  /*
-   * Fallback empty registry.
-   *
-   * Replace with:
-   *
-   * import PROVIDERS from "./providers.json";
-   *
-   * when deploying the final version.
-   */
-
-  return [];
-}
-
-// --------------------------------------------------
-// PROVIDER SEARCH
-// --------------------------------------------------
-
-async function queryProvider(
+async function searchProvider(
   provider,
   params,
   env
 ) {
-  const endpoint = buildEndpoint(
-    provider,
-    params
-  );
+  try {
+    if (
+      provider.instance_required &&
+      !provider.baseUrl
+    ) {
+      return {
+        ok: false,
+        provider: provider.id,
+        error: "Provider instance URL is missing"
+      };
+    }
 
-  if (!endpoint) {
-    return [];
-  }
+    const config =
+      provider.search || {};
 
-  const headers = buildHeaders(
-    provider,
-    env
-  );
+    const method =
+      normalizeMethod(
+        config.method || "GET"
+      );
 
-  const response = await fetchWithRetry(
-    endpoint,
-    {
-      method: provider.method || "GET",
-      headers
-    },
-    provider.timeoutMs || DEFAULTS.timeoutMs,
-    provider.retries ?? DEFAULTS.retries
-  );
+    if (!ALLOWED_METHODS.has(method)) {
+      return {
+        ok: false,
+        provider: provider.id,
+        error: `Unsupported method: ${method}`
+      };
+    }
 
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status}`
+    const target =
+      buildProviderRequest(
+        provider,
+        config,
+        params,
+        env
+      );
+
+    const response =
+      await fetchWithRetry(
+        target.url,
+        {
+          method,
+          headers: target.headers,
+          body: target.body
+        },
+        provider
+      );
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        provider: provider.id,
+        error:
+          `HTTP ${response.status}`
+      };
+    }
+
+    const data =
+      await parseResponse(response);
+
+    const items =
+      extractResults(
+        data,
+        config.resultsPath
+      );
+
+    const normalized =
+      items
+        .slice(
+          0,
+          DEFAULTS.maxResultsPerProvider
+        )
+        .map(item =>
+          normalizeProviderResult(
+            item,
+            provider,
+            params
+          )
+        )
+        .filter(Boolean);
+
+    return {
+      ok: true,
+      provider: provider.id,
+      results: normalized
+    };
+
+  } catch (error) {
+    console.error(
+      `Provider ${provider.id}:`,
+      error
     );
+
+    return {
+      ok: false,
+      provider: provider.id,
+      error: error.message
+    };
   }
-
-  const contentType =
-    response.headers.get(
-      "content-type"
-    ) || "";
-
-  if (!contentType.includes("json")) {
-    throw new Error(
-      "Provider returned non-JSON response"
-    );
-  }
-
-  const data = await response.json();
-
-  return extractProviderResults(
-    provider,
-    data
-  );
 }
 
-// --------------------------------------------------
-// PROVIDER RESOLVE
-// --------------------------------------------------
+/* =========================================================
+   PROVIDER RESOLVE ENGINE
+   ========================================================= */
 
 async function resolveProvider(
   provider,
-  itemId,
+  params,
   env
 ) {
-  if (!provider.resolve) {
+  try {
+    const config =
+      provider.resolve || {};
+
+    const method =
+      normalizeMethod(
+        config.method || "GET"
+      );
+
+    const target =
+      buildProviderRequest(
+        provider,
+        config,
+        params,
+        env
+      );
+
+    const response =
+      await fetchWithRetry(
+        target.url,
+        {
+          method,
+          headers: target.headers,
+          body: target.body
+        },
+        provider
+      );
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        code: "PROVIDER_ERROR",
+        error:
+          `HTTP ${response.status}`
+      };
+    }
+
+    const data =
+      await parseResponse(response);
+
+    const normalized =
+      normalizeProviderResult(
+        data,
+        provider,
+        params
+      );
+
     return {
-      id: itemId,
-      url: null,
-      playable: false,
-      message: "Provider does not expose a resolver"
+      ok: true,
+      result: normalized
+    };
+
+  } catch (error) {
+    return {
+      ok: false,
+      code: "PROVIDER_ERROR",
+      error: error.message
     };
   }
+}
 
-  const endpoint = buildResolveEndpoint(
-    provider,
-    itemId
-  );
+/* =========================================================
+   REQUEST BUILDER
+   ========================================================= */
 
-  if (!endpoint) {
-    return {
-      id: itemId,
-      url: null,
-      playable: false
-    };
-  }
+function buildProviderRequest(
+  provider,
+  config,
+  params,
+  env
+) {
+  const base =
+    config.baseUrl ||
+    provider.apiBaseUrl ||
+    provider.baseUrl ||
+    "";
 
-  const headers = buildHeaders(
-    provider,
-    env
-  );
+  const apiBase =
+    provider.apiBaseUrl ||
+    provider.baseUrl ||
+    "";
 
-  const response = await fetchWithRetry(
-    endpoint,
-    {
-      method: provider.resolve.method || "GET",
-      headers
-    },
-    provider.resolve.timeoutMs ||
-      DEFAULTS.timeoutMs,
-    provider.resolve.retries ??
-      DEFAULTS.retries
-  );
+  let path =
+    config.path || "";
 
-  if (!response.ok) {
-    throw new Error(
-      `Resolver HTTP ${response.status}`
+  path =
+    template(
+      path,
+      params,
+      provider,
+      env
     );
+
+  const baseUrl =
+    path.startsWith("http://") ||
+    path.startsWith("https://")
+      ? path
+      : joinUrl(apiBase, path);
+
+  const url =
+    new URL(baseUrl);
+
+  const query =
+    config.query || {};
+
+  for (
+    const [key, value] of Object.entries(query)
+  ) {
+    const resolved =
+      resolveTemplateValue(
+        value,
+        params,
+        provider,
+        env
+      );
+
+    if (
+      resolved !== undefined &&
+      resolved !== null &&
+      resolved !== ""
+    ) {
+      url.searchParams.set(
+        key,
+        String(resolved)
+      );
+    }
   }
 
-  const data = await response.json();
+  const headers =
+    buildAuthHeaders(
+      provider,
+      env
+    );
 
-  return normalizePlayback(
-    provider,
-    data
-  );
-}
+  let body;
 
-// --------------------------------------------------
-// URL BUILDING
-// --------------------------------------------------
+  if (
+    config.body &&
+    typeof config.body === "object"
+  ) {
+    body = JSON.stringify(
+      resolveObjectTemplates(
+        config.body,
+        params,
+        provider,
+        env
+      )
+    );
 
-function buildEndpoint(
-  provider,
-  params
-) {
-  if (!provider.search?.url) {
-    return null;
+    headers["Content-Type"] =
+      "application/json";
   }
 
-  let endpoint = provider.search.url;
-
-  endpoint = endpoint.replace(
-    /\{query\}/g,
-    encodeURIComponent(params.query || "")
-  );
-
-  endpoint = endpoint.replace(
-    /\{type\}/g,
-    encodeURIComponent(params.type || "")
-  );
-
-  endpoint = endpoint.replace(
-    /\{season\}/g,
-    encodeURIComponent(params.season || "")
-  );
-
-  endpoint = endpoint.replace(
-    /\{episode\}/g,
-    encodeURIComponent(params.episode || "")
-  );
-
-  return endpoint;
+  return {
+    url: url.toString(),
+    headers,
+    body
+  };
 }
 
-function buildResolveEndpoint(
-  provider,
-  itemId
-) {
-  if (!provider.resolve?.url) {
-    return null;
-  }
+/* =========================================================
+   AUTH
+   ========================================================= */
 
-  return provider.resolve.url.replace(
-    /\{id\}/g,
-    encodeURIComponent(itemId)
-  );
-}
-
-// --------------------------------------------------
-// HEADERS / AUTH
-// --------------------------------------------------
-
-function buildHeaders(
+function buildAuthHeaders(
   provider,
   env
 ) {
@@ -556,59 +659,61 @@ function buildHeaders(
     Accept: "application/json"
   };
 
-  const auth = provider.auth;
+  const auth =
+    provider.authentication || {};
 
-  if (!auth) {
+  if (
+    !auth.required ||
+    !auth.secretName
+  ) {
     return headers;
   }
 
-  /*
-   * Secret values should be stored in
-   * Cloudflare Worker Secrets.
-   *
-   * providers.json contains only the
-   * secret name, never the actual secret.
-   */
+  const secret =
+    env[auth.secretName];
 
-  if (
-    auth.type === "bearer" &&
-    auth.secretName
-  ) {
-    const token =
-      env[auth.secretName];
-
-    if (token) {
-      headers.Authorization =
-        `Bearer ${token}`;
-    }
+  if (!secret) {
+    return headers;
   }
 
-  if (
-    auth.type === "api-key" &&
-    auth.secretName &&
-    auth.header
+  switch (
+    String(auth.type || "").toLowerCase()
   ) {
-    const key =
-      env[auth.secretName];
+    case "bearer":
+      headers.Authorization =
+        `Bearer ${secret}`;
+      break;
 
-    if (key) {
-      headers[auth.header] = key;
-    }
+    case "api_key":
+    case "apikey":
+      headers["X-API-Key"] =
+        secret;
+      break;
+
+    default:
+      headers.Authorization =
+        `Bearer ${secret}`;
   }
 
   return headers;
 }
 
-// --------------------------------------------------
-// FETCH WITH TIMEOUT + RETRY
-// --------------------------------------------------
+/* =========================================================
+   FETCH + RETRY + TIMEOUT
+   ========================================================= */
 
 async function fetchWithRetry(
-  input,
-  init,
-  timeoutMs,
-  retries
+  url,
+  options,
+  provider
 ) {
+  const retries =
+    Number.isInteger(
+      provider.retries
+    )
+      ? provider.retries
+      : DEFAULTS.retries;
+
   let lastError;
 
   for (
@@ -618,9 +723,10 @@ async function fetchWithRetry(
   ) {
     try {
       return await fetchWithTimeout(
-        input,
-        init,
-        timeoutMs
+        url,
+        options,
+        provider.timeoutMs ||
+          DEFAULTS.timeoutMs
       );
     } catch (error) {
       lastError = error;
@@ -633,27 +739,30 @@ async function fetchWithRetry(
     }
   }
 
-  throw lastError;
+  throw lastError ||
+    new Error("Request failed");
 }
 
 async function fetchWithTimeout(
-  input,
-  init,
+  url,
+  options,
   timeoutMs
 ) {
   const controller =
     new AbortController();
 
-  const timer = setTimeout(
-    () => controller.abort(),
-    timeoutMs
-  );
+  const timer =
+    setTimeout(
+      () => controller.abort(),
+      timeoutMs
+    );
 
   try {
     return await fetch(
-      input,
+      url,
       {
-        ...init,
+        ...options,
+        redirect: "follow",
         signal: controller.signal
       }
     );
@@ -662,471 +771,782 @@ async function fetchWithTimeout(
   }
 }
 
-function sleep(ms) {
-  return new Promise(
-    resolve => setTimeout(resolve, ms)
-  );
-}
+/* =========================================================
+   RESPONSE PARSER
+   ========================================================= */
 
-// --------------------------------------------------
-// RESULT NORMALIZATION
-// --------------------------------------------------
-
-function extractProviderResults(
-  provider,
-  data
+async function parseResponse(
+  response
 ) {
-  let items = [];
+  const type =
+    response.headers
+      .get("content-type") || "";
 
   if (
-    provider.response?.resultsPath
+    type.includes("application/json") ||
+    type.includes("+json")
   ) {
-    items =
+    return response.json();
+  }
+
+  const text =
+    await response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      text
+    };
+  }
+}
+
+/* =========================================================
+   RESULT EXTRACTION
+   ========================================================= */
+
+function extractResults(
+  data,
+  resultsPath
+) {
+  if (!data) return [];
+
+  if (resultsPath) {
+    const value =
       getPath(
         data,
-        provider.response.resultsPath
-      ) || [];
-  } else if (Array.isArray(data)) {
-    items = data;
-  } else if (Array.isArray(data.results)) {
-    items = data.results;
-  } else if (Array.isArray(data.data)) {
-    items = data.data;
+        resultsPath
+      );
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (value) {
+      return [value];
+    }
   }
 
-  if (!Array.isArray(items)) {
-    return [];
+  if (Array.isArray(data)) {
+    return data;
   }
 
-  return items.map(item =>
-    normalizeItem(
-      provider,
-      item
-    )
-  );
+  const candidates = [
+    data.results,
+    data.items,
+    data.data,
+    data.videos,
+    data.entries,
+    data.records,
+    data.channels,
+    data.shows,
+    data.media
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [data];
 }
 
-function normalizeItem(
+/* =========================================================
+   NORMALIZATION
+   ========================================================= */
+
+function normalizeProviderResult(
+  item,
   provider,
-  item
+  requestParams
 ) {
-  const mapping =
-    provider.response?.mapping || {};
+  if (!item) return null;
 
-  return {
-    provider: provider.id,
-
-    providerItemId:
-      readMapping(
-        item,
-        mapping.id
-      ),
-
-    title:
-      readMapping(
-        item,
-        mapping.title
-      ) || "",
-
-    originalTitle:
-      readMapping(
-        item,
-        mapping.originalTitle
-      ) || null,
-
-    type:
-      readMapping(
-        item,
-        mapping.type
-      ) || "unknown",
-
-    year:
-      toNumber(
-        readMapping(
-          item,
-          mapping.year
-        )
-      ),
-
-    season:
-      toNumber(
-        readMapping(
-          item,
-          mapping.season
-        )
-      ),
-
-    episode:
-      toNumber(
-        readMapping(
-          item,
-          mapping.episode
-        )
-      ),
-
-    episodeTitle:
-      readMapping(
-        item,
-        mapping.episodeTitle
-      ) || null,
-
-    url:
-      readMapping(
-        item,
-        mapping.url
-      ) || null,
-
-    urlType:
-      detectUrlType(
-        readMapping(
-          item,
-          mapping.url
-        )
-      ),
-
-    language:
-      normalizeArray(
-        readMapping(
-          item,
-          mapping.language
-        )
-      ),
-
-    subtitle:
-      normalizeArray(
-        readMapping(
-          item,
-          mapping.subtitle
-        )
-      ),
-
-    duration:
-      toNumber(
-        readMapping(
-          item,
-          mapping.duration
-        )
-      ),
-
-    thumbnail:
-      readMapping(
-        item,
-        mapping.thumbnail
-      ) || null,
-
-    license:
-      readMapping(
-        item,
-        mapping.license
-      ) || null,
-
-    rights:
-      readMapping(
-        item,
-        mapping.rights
-      ) || null
-  };
-}
-
-// --------------------------------------------------
-// PLAYBACK NORMALIZATION
-// --------------------------------------------------
-
-function normalizePlayback(
-  provider,
-  data
-) {
-  const mapping =
-    provider.resolve?.mapping || {};
+  const title =
+    firstValue(item, [
+      "title",
+      "name",
+      "display_name",
+      "label"
+    ]);
 
   const url =
-    readMapping(
-      data,
-      mapping.url
+    firstValue(item, [
+      "url",
+      "videoUrl",
+      "video_url",
+      "playbackUrl",
+      "playback_url",
+      "streamUrl",
+      "stream_url",
+      "file",
+      "src",
+      "source"
+    ]);
+
+  const providerItemId =
+    String(
+      firstValue(item, [
+        "id",
+        "uuid",
+        "videoId",
+        "video_id",
+        "identifier",
+        "slug"
+      ]) || ""
+    );
+
+  const normalizedUrl =
+    normalizePlaybackUrl(
+      url
+    );
+
+  const type =
+    normalizeType(
+      firstValue(item, [
+        "type",
+        "media_type",
+        "content_type"
+      ]) ||
+      requestParams.type
+    );
+
+  const season =
+    toNumber(
+      firstValue(item, [
+        "season",
+        "season_number",
+        "seasonNumber"
+      ])
+    );
+
+  const episode =
+    toNumber(
+      firstValue(item, [
+        "episode",
+        "episode_number",
+        "episodeNumber",
+        "episode_no"
+      ])
+    );
+
+  const languages =
+    normalizeArray(
+      firstValue(item, [
+        "language",
+        "languages",
+        "lang"
+      ])
+    );
+
+  const subtitles =
+    normalizeArray(
+      firstValue(item, [
+        "subtitle",
+        "subtitles",
+        "captions"
+      ])
     );
 
   return {
-    provider: provider.id,
+    provider:
+      provider.id,
 
-    url: url || null,
+    providerName:
+      provider.name ||
+      provider.id,
 
-    urlType:
-      detectUrlType(url),
+    providerItemId,
 
-    playable:
-      Boolean(url),
+    title:
+      title || null,
 
-    expiresAt:
-      readMapping(
-        data,
-        mapping.expiresAt
-      ) || null,
+    originalTitle:
+      firstValue(item, [
+        "originalTitle",
+        "original_title"
+      ]) || null,
 
-    subtitles:
-      normalizeArray(
-        readMapping(
-          data,
-          mapping.subtitles
-        )
+    type,
+
+    year:
+      toNumber(
+        firstValue(item, [
+          "year",
+          "release_year"
+        ])
       ),
 
-    headers:
-      mapping.forwardHeaders
-        ? readMapping(
-            data,
-            mapping.forwardHeaders
-          )
-        : undefined
+    season,
+
+    episode,
+
+    episodeTitle:
+      firstValue(item, [
+        "episodeTitle",
+        "episode_title"
+      ]) || null,
+
+    url:
+      normalizedUrl.url,
+
+    urlType:
+      normalizedUrl.type,
+
+    language:
+      languages,
+
+    subtitle:
+      subtitles,
+
+    duration:
+      toNumber(
+        firstValue(item, [
+          "duration",
+          "duration_seconds"
+        ])
+      ),
+
+    thumbnail:
+      firstValue(item, [
+        "thumbnail",
+        "thumbnailUrl",
+        "thumbnail_url",
+        "poster",
+        "posterUrl",
+        "poster_url"
+      ]) || null,
+
+    license:
+      firstValue(item, [
+        "license",
+        "licence"
+      ]) ||
+      provider.rights?.license ||
+      null,
+
+    rights:
+      provider.rights || null,
+
+    playback:
+      {
+        available:
+          !!normalizedUrl.url,
+
+        type:
+          normalizedUrl.type,
+
+        direct:
+          !!normalizedUrl.url
+      }
   };
 }
 
-// --------------------------------------------------
-// NORMALIZATION HELPERS
-// --------------------------------------------------
+/* =========================================================
+   PLAYBACK URL DETECTION
+   ========================================================= */
 
-function normalizeResults(
-  results
+function normalizePlaybackUrl(
+  raw
 ) {
-  const seen = new Set();
-  const output = [];
+  if (
+    typeof raw !== "string" ||
+    !raw.trim()
+  ) {
+    return {
+      url: null,
+      type: "unknown"
+    };
+  }
 
-  for (const item of results) {
-    const key = [
-      normalizeTitle(item.title),
-      item.type,
-      item.season || "",
-      item.episode || "",
-      item.url || ""
-    ].join("|");
+  let value =
+    raw.trim();
 
-    if (seen.has(key)) {
-      continue;
+  try {
+    const parsed =
+      new URL(value);
+
+    const pathname =
+      parsed.pathname.toLowerCase();
+
+    if (
+      pathname.endsWith(".m3u8")
+    ) {
+      return {
+        url: parsed.toString(),
+        type: "hls"
+      };
     }
 
-    seen.add(key);
+    if (
+      pathname.endsWith(".mpd")
+    ) {
+      return {
+        url: parsed.toString(),
+        type: "dash"
+      };
+    }
 
-    output.push(item);
+    if (
+      pathname.endsWith(".mp4")
+    ) {
+      return {
+        url: parsed.toString(),
+        type: "mp4"
+      };
+    }
+
+    if (
+      pathname.endsWith(".webm")
+    ) {
+      return {
+        url: parsed.toString(),
+        type: "webm"
+      };
+    }
+
+    if (
+      pathname.endsWith(".ogv") ||
+      pathname.endsWith(".ogg")
+    ) {
+      return {
+        url: parsed.toString(),
+        type: "ogv"
+      };
+    }
+
+    return {
+      url: parsed.toString(),
+      type: "page"
+    };
+
+  } catch {
+    return {
+      url: value,
+      type: "unknown"
+    };
   }
-
-  return output;
 }
 
-function normalizeTitle(value) {
-  return String(value || "")
-    .toLowerCase()
-    .trim()
-    .replace(
-      /[^\p{L}\p{N}]+/gu,
-      " "
-    )
-    .replace(/\s+/g, " ");
-}
+/* =========================================================
+   DEDUPLICATION
+   ========================================================= */
 
-function normalizeArray(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return [];
-  }
-
-  return [value];
-}
-
-function detectUrlType(url) {
-  if (!url) {
-    return "unknown";
-  }
-
-  const value =
-    String(url).toLowerCase();
-
-  if (value.includes(".m3u8")) {
-    return "hls";
-  }
-
-  if (value.includes(".mpd")) {
-    return "dash";
-  }
-
-  if (value.includes(".mp4")) {
-    return "mp4";
-  }
-
-  if (value.includes(".webm")) {
-    return "webm";
-  }
-
-  return "page";
-}
-
-// --------------------------------------------------
-// TYPE FILTER
-// --------------------------------------------------
-
-function supportsType(
-  provider,
-  type
+function deduplicateResults(
+  results
 ) {
-  if (!type) {
-    return true;
+  const map =
+    new Map();
+
+  for (const item of results) {
+    const key =
+      [
+        normalizeTitle(item.title),
+        item.type || "unknown",
+        item.year || "",
+        item.season || "",
+        item.episode || ""
+      ].join("|");
+
+    if (!map.has(key)) {
+      map.set(key, item);
+    }
   }
 
-  if (
-    !provider.types ||
-    !Array.isArray(provider.types)
-  ) {
-    return true;
-  }
+  return [...map.values()];
+}
 
-  return provider.types.includes(
-    type
+/* =========================================================
+   PARALLEL PROVIDERS
+   ========================================================= */
+
+async function parallelMap(
+  items,
+  fn
+) {
+  const results =
+    await Promise.allSettled(
+      items.map(fn)
+    );
+
+  return results.map(
+    (result, index) => {
+      if (
+        result.status === "fulfilled"
+      ) {
+        return result.value;
+      }
+
+      return {
+        ok: false,
+        provider:
+          items[index]?.id,
+        error:
+          result.reason?.message ||
+          "Unknown error"
+      };
+    }
   );
 }
 
-// --------------------------------------------------
-// PATH / MAPPING
-// --------------------------------------------------
+/* =========================================================
+   CACHE
+   ========================================================= */
+
+async function getCache(
+  key
+) {
+  try {
+    const cache =
+      caches.default;
+
+    const response =
+      await cache.match(key);
+
+    if (!response) {
+      return null;
+    }
+
+    return response.clone();
+
+  } catch {
+    return null;
+  }
+}
+
+async function putCache(
+  key,
+  response,
+  ttl
+) {
+  try {
+    const cache =
+      caches.default;
+
+    const cached =
+      new Response(
+        response.body,
+        response
+      );
+
+    cached.headers.set(
+      "Cache-Control",
+      `public, max-age=${ttl}`
+    );
+
+    await cache.put(
+      key,
+      cached
+    );
+
+  } catch (error) {
+    console.error(
+      "Cache error:",
+      error
+    );
+  }
+}
+
+function createCacheKey(
+  namespace,
+  data
+) {
+  const url =
+    new URL(
+      `https://cache.prophecy.internal/${namespace}`
+    );
+
+  for (
+    const [key, value]
+    of Object.entries(data)
+  ) {
+    url.searchParams.set(
+      key,
+      value == null
+        ? ""
+        : String(value)
+    );
+  }
+
+  return new Request(
+    url.toString(),
+    {
+      method: "GET"
+    }
+  );
+}
+
+/* =========================================================
+   TEMPLATE ENGINE
+   ========================================================= */
+
+function template(
+  value,
+  params,
+  provider,
+  env
+) {
+  return String(value)
+    .replace(
+      /\{([^}]+)\}/g,
+      (_, key) => {
+        const result =
+          resolveTemplateValue(
+            `{${key}}`,
+            params,
+            provider,
+            env
+          );
+
+        return result == null
+          ? ""
+          : String(result);
+      }
+    );
+}
+
+function resolveTemplateValue(
+  value,
+  params,
+  provider,
+  env
+) {
+  if (
+    typeof value !== "string"
+  ) {
+    return value;
+  }
+
+  return value.replace(
+    /\{([^}]+)\}/g,
+    (_, key) => {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          params,
+          key
+        )
+      ) {
+        return params[key] ?? "";
+      }
+
+      if (
+        key === "provider"
+      ) {
+        return provider.id;
+      }
+
+      if (
+        key.startsWith("env:")
+      ) {
+        const envKey =
+          key.slice(4);
+
+        return env[envKey] || "";
+      }
+
+      if (
+        env[key] !== undefined
+      ) {
+        return env[key];
+      }
+
+      return "";
+    }
+  );
+}
+
+function resolveObjectTemplates(
+  object,
+  params,
+  provider,
+  env
+) {
+  if (Array.isArray(object)) {
+    return object.map(item =>
+      resolveObjectTemplates(
+        item,
+        params,
+        provider,
+        env
+      )
+    );
+  }
+
+  if (
+    object &&
+    typeof object === "object"
+  ) {
+    const output = {};
+
+    for (
+      const [key, value]
+      of Object.entries(object)
+    ) {
+      output[key] =
+        resolveObjectTemplates(
+          value,
+          params,
+          provider,
+          env
+        );
+    }
+
+    return output;
+  }
+
+  return resolveTemplateValue(
+    object,
+    params,
+    provider,
+    env
+  );
+}
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+function joinUrl(
+  base,
+  path
+) {
+  if (!base) {
+    return path;
+  }
+
+  if (!path) {
+    return base;
+  }
+
+  return (
+    base.replace(/\/+$/, "") +
+    "/" +
+    path.replace(/^\/+/, "")
+  );
+}
 
 function getPath(
   object,
   path
 ) {
-  if (!path) {
-    return object;
-  }
-
   return String(path)
     .split(".")
     .reduce(
-      (value, key) =>
-        value == null
+      (current, key) =>
+        current == null
           ? undefined
-          : value[key],
+          : current[key],
       object
     );
 }
 
-function readMapping(
+function firstValue(
   object,
-  path
+  keys
 ) {
-  if (!path) {
-    return undefined;
+  for (const key of keys) {
+    if (
+      object &&
+      object[key] !== undefined &&
+      object[key] !== null &&
+      object[key] !== ""
+    ) {
+      return object[key];
+    }
+  }
+
+  return null;
+}
+
+function normalizeArray(
+  value
+) {
+  if (Array.isArray(value)) {
+    return value;
   }
 
   if (
-    typeof path === "string"
+    typeof value === "string"
   ) {
-    return getPath(
-      object,
-      path
-    );
+    return value
+      .split(",")
+      .map(x => x.trim())
+      .filter(Boolean);
   }
 
-  return undefined;
+  return [];
 }
 
-// --------------------------------------------------
-// PUBLIC PROVIDER INFO
-// --------------------------------------------------
-
-function publicProviderInfo(
-  provider
+function normalizeType(
+  value
 ) {
-  return {
-    id: provider.id,
-    name: provider.name || provider.id,
-    enabled:
-      provider.enabled !== false,
-    types:
-      provider.types || [],
-    auth:
-      provider.auth
-        ? provider.auth.type
-        : "none",
-    capabilities:
-      provider.capabilities || {}
-  };
-}
+  const type =
+    String(
+      value || "unknown"
+    ).toLowerCase();
 
-// --------------------------------------------------
-// CACHE
-// --------------------------------------------------
-
-async function cacheResponse(
-  request,
-  response,
-  ttl
-) {
-  const headers =
-    new Headers(
-      response.headers
-    );
-
-  headers.set(
-    "Cache-Control",
-    `public, max-age=${ttl}`
-  );
-
-  const cachedResponse =
-    new Response(
-      await response.text(),
-      {
-        status: response.status,
-        headers
-      }
-    );
-
-  await caches.default.put(
-    request,
-    cachedResponse
-  );
-}
-
-// --------------------------------------------------
-// INPUT HELPERS
-// --------------------------------------------------
-
-function cleanString(value) {
   if (
-    value === null ||
-    value === undefined
+    type.includes("anime")
   ) {
+    return "anime";
+  }
+
+  if (
+    type.includes("movie") ||
+    type.includes("film")
+  ) {
+    return "movie";
+  }
+
+  if (
+    type.includes("kdrama") ||
+    type.includes("k-drama") ||
+    type.includes("k drama")
+  ) {
+    return "kdrama";
+  }
+
+  if (
+    type.includes("tv") ||
+    type.includes("series") ||
+    type.includes("show")
+  ) {
+    return "tv";
+  }
+
+  return "unknown";
+}
+
+function normalizeTitle(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .toLowerCase()
+    .replace(
+      /[^\p{L}\p{N}]+/gu,
+      " "
+    )
+    .trim();
+}
+
+function cleanText(
+  value
+) {
+  if (!value) {
     return "";
   }
 
-  return String(value).trim();
+  return String(value)
+    .trim()
+    .slice(0, 300);
 }
 
-function toPositiveInt(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return null;
-  }
-
-  const number =
-    Number(value);
-
-  if (
-    !Number.isInteger(number) ||
-    number < 1
-  ) {
-    return null;
-  }
-
-  return number;
-}
-
-function toNumber(value) {
+function parseNumber(
+  value
+) {
   if (
     value === null ||
     value === undefined ||
@@ -1143,32 +1563,70 @@ function toNumber(value) {
     : null;
 }
 
-// --------------------------------------------------
-// RESPONSE HELPERS
-// --------------------------------------------------
+function toNumber(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const number =
+    Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : null;
+}
+
+function normalizeMethod(
+  method
+) {
+  return String(
+    method || "GET"
+  ).toUpperCase();
+}
+
+function sleep(
+  ms
+) {
+  return new Promise(
+    resolve =>
+      setTimeout(resolve, ms)
+  );
+}
+
+/* =========================================================
+   RESPONSE HELPERS
+   ========================================================= */
 
 function json(
   data,
   status = 200
 ) {
-  const headers = {
-    ...CORS_HEADERS,
-    "Content-Type":
-      "application/json; charset=utf-8",
-    "X-Prophecy-Version":
-      VERSION
-  };
+  const response =
+    new Response(
+      JSON.stringify(
+        data,
+        null,
+        2
+      ),
+      {
+        status,
+        headers: {
+          "Content-Type":
+            "application/json; charset=utf-8",
+          "Cache-Control":
+            "no-store"
+        }
+      }
+    );
 
-  return new Response(
-    JSON.stringify(
-      data,
-      null,
-      2
-    ),
-    {
-      status,
-      headers
-    }
+  return corsResponse(
+    response
   );
 }
 
@@ -1179,12 +1637,47 @@ function errorResponse(
 ) {
   return json(
     {
-      success: false,
+      ok: false,
       error: {
         code,
         message
       }
     },
     status
+  );
+}
+
+function corsResponse(
+  response
+) {
+  const headers =
+    new Headers(
+      response.headers
+    );
+
+  headers.set(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+  headers.set(
+    "Access-Control-Allow-Methods",
+    "GET, OPTIONS"
+  );
+
+  headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+
+  return new Response(
+    response.body,
+    {
+      status:
+        response.status,
+      statusText:
+        response.statusText,
+      headers
+    }
   );
 }
